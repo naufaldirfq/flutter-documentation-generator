@@ -1,0 +1,21 @@
+# MeDoc Configuration File
+
+# Project paths
+projectPath: "/Users/mekari/Documents/mekari/brick-house"
+outputPath: "./docs"
+
+# Ollama AI Model Settings
+modelName: "deepseek-coder"  # Can also be specific like deepseek-coder:7b-instruct
+temperature: 0.1
+contextLength: 4096
+verbose: true
+
+# Documentation settings
+include:
+  - lib/**/*.dart
+exclude:
+  - lib/generated/**
+  - lib/test/**
+
+# Output format
+format: "markdown"
