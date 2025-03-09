@@ -20,6 +20,14 @@ curl -fsSL https://ollama.com/install.sh | sh
 
 Download the installer from [ollama.com](https://ollama.com).
 
+### Docker
+
+To use Ollama with Docker, build the Docker image and start the container:
+
+```bash
+docker-compose up --build
+```
+
 ## Start Ollama
 
 After installation, start the Ollama service:
@@ -61,6 +69,28 @@ ollama list
 ```
 
 You should see `deepseek-coder` listed among the available models.
+
+## Running MeDoc inside Docker
+
+To run the MeDoc application inside the Docker container:
+
+1. Start the Docker container:
+
+    ```bash
+    docker-compose up -d
+    ```
+
+2. Execute the MeDoc script inside the running container:
+
+    ```bash
+    docker exec -it me_doc dart run bin/me_doc.dart --config me_doc_config.yaml
+    ```
+
+    Replace `me_doc` with the actual name of your running container if different. You can find the container name by running:
+
+    ```bash
+    docker ps
+    ```
 
 ## Troubleshooting
 
