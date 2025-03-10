@@ -12,46 +12,47 @@ import 'package:yaml/yaml.dart';
 /// Analyzes a Flutter project's code structure
 class CodeAnalyzer {
   final String projectPath;
-  
-  CodeAnalyzer(this.projectPath);
-  
+  final List<String> excludePaths;
+
+  CodeAnalyzer(this.projectPath, {this.excludePaths = const []});
+
   /// Analyzes the project and returns its structure
   Future<ProjectStructure> analyzeProject() async {
     // Parse pubspec.yaml for project metadata
     final metadata = await _parseProjectMetadata();
-    
+
     // Find all Dart files in the project
     final dartFiles = await _findDartFiles();
-    
+
     // Set up analyzer
     final contextCollection = AnalysisContextCollection(
       includedPaths: [projectPath],
       resourceProvider: PhysicalResourceProvider.INSTANCE,
     );
-    
+
     // Analyze each file
     final filesAnalysis = <String, FileAnalysis>{};
     final widgets = <String>[];
     final services = <String>[];
     final models = <String>[];
-    
+
     print('Found ${dartFiles.length} Dart files to analyze');
-    
+
     int count = 0;
     for (final file in dartFiles) {
       count++;
-      if (count % 10 == 0) {
+      if (count % 50 == 0) {
         print('Analyzing file $count/${dartFiles.length}');
       }
-      
+
       try {
         final context = contextCollection.contextFor(file);
         final resolvedUnit = await context.currentSession.getResolvedUnit(file);
-        
+
         if (resolvedUnit is ResolvedUnitResult) {
           final fileAnalysis = _analyzeFile(resolvedUnit, file);
           filesAnalysis[file] = fileAnalysis;
-          
+
           // Categorize classes
           for (final classInfo in fileAnalysis.classes) {
             if (_isWidget(classInfo)) {
@@ -68,7 +69,7 @@ class CodeAnalyzer {
         // Continue with next file
       }
     }
-    
+
     return ProjectStructure(
       metadata: metadata,
       files: filesAnalysis,
@@ -77,7 +78,7 @@ class CodeAnalyzer {
       models: models,
     );
   }
-  
+
   /// Parse project metadata from pubspec.yaml
   Future<ProjectMetadata> _parseProjectMetadata() async {
     try {
@@ -91,24 +92,24 @@ class CodeAnalyzer {
           devDependencies: {},
         );
       }
-      
+
       final pubspecContent = await pubspecFile.readAsString();
       final yaml = loadYaml(pubspecContent);
-      
+
       final dependencies = <String, String>{};
       if (yaml['dependencies'] is Map) {
         for (var entry in (yaml['dependencies'] as Map).entries) {
           dependencies[entry.key.toString()] = entry.value.toString();
         }
       }
-      
+
       final devDependencies = <String, String>{};
       if (yaml['dev_dependencies'] is Map) {
         for (var entry in (yaml['dev_dependencies'] as Map).entries) {
           devDependencies[entry.key.toString()] = entry.value.toString();
         }
       }
-      
+
       return ProjectMetadata(
         name: yaml['name']?.toString() ?? 'unknown',
         description: yaml['description']?.toString() ?? '',
@@ -127,32 +128,46 @@ class CodeAnalyzer {
       );
     }
   }
-  
+
   /// Find all Dart files in the project
   Future<List<String>> _findDartFiles() async {
     final result = <String>[];
-    
+
     await _findFiles(Directory(projectPath), '.dart', result);
-    
-    // Filter out test files, generated files, and build directory
-    return result.where((file) => 
-      !file.contains('/test/') && 
-      !file.contains('/.dart_tool/') &&
-      !file.contains('/build/') &&
-      !file.endsWith('.g.dart') &&
-      !file.endsWith('.freezed.dart')
-    ).toList();
+
+    // Filter out test files, generated files, build directory, and user-specified excludes
+    return result.where((file) {
+      // Apply default exclusions
+      if (file.contains('/test/') ||
+          file.contains('/.dart_tool/') ||
+          file.contains('/build/') ||
+          file.endsWith('.g.dart') ||
+          file.endsWith('.freezed.dart')) {
+        return false;
+      }
+
+      // Apply user-specified exclusions
+      final relativePath = path.relative(file, from: projectPath);
+      for (final excludePath in excludePaths) {
+        if (_matchesGlobPattern(relativePath, excludePath)) {
+          return false;
+        }
+      }
+
+      return true;
+    }).toList();
   }
-  
+
   /// Recursively find files with a specific extension
-  Future<void> _findFiles(Directory directory, String extension, List<String> result) async {
+  Future<void> _findFiles(
+      Directory directory, String extension, List<String> result) async {
     try {
       await for (final entity in directory.list()) {
         if (entity is File && entity.path.endsWith(extension)) {
           result.add(entity.path);
-        } else if (entity is Directory && 
-                  !path.basename(entity.path).startsWith('.') && 
-                  !path.basename(entity.path).startsWith('build')) {
+        } else if (entity is Directory &&
+            !path.basename(entity.path).startsWith('.') &&
+            !path.basename(entity.path).startsWith('build')) {
           await _findFiles(entity, extension, result);
         }
       }
@@ -160,13 +175,26 @@ class CodeAnalyzer {
       // Skip directories that can't be read
     }
   }
-  
+
+  /// Checks if a file path matches a glob pattern
+  bool _matchesGlobPattern(String filePath, String pattern) {
+    // Convert glob pattern to RegExp
+    final regexPattern = pattern
+        .replaceAll('.', '\\.')
+        .replaceAll('*', '.*')
+        .replaceAll('?', '.')
+        .replaceAll('**', '.*');
+
+    final regex = RegExp('^$regexPattern\$');
+    return regex.hasMatch(filePath);
+  }
+
   /// Analyze a single Dart file
   FileAnalysis _analyzeFile(ResolvedUnitResult resolvedUnit, String filePath) {
     final relativePath = path.relative(filePath, from: projectPath);
     final visitor = _CodeVisitor();
     resolvedUnit.unit.accept(visitor);
-    
+
     return FileAnalysis(
       path: filePath,
       relativePath: relativePath,
@@ -175,38 +203,37 @@ class CodeAnalyzer {
       exports: visitor.exports,
     );
   }
-  
+
   /// Check if a class is a Flutter widget
   bool _isWidget(ClassInfo classInfo) {
     return classInfo.superclass?.contains('Widget') == true ||
-           classInfo.superclass?.contains('StatelessWidget') == true ||
-           classInfo.superclass?.contains('StatefulWidget') == true ||
-           classInfo.interfaces.any((i) => i.contains('Widget'));
+        classInfo.superclass?.contains('StatelessWidget') == true ||
+        classInfo.superclass?.contains('StatefulWidget') == true ||
+        classInfo.interfaces.any((i) => i.contains('Widget'));
   }
-  
+
   /// Check if a class is likely a service
   bool _isService(ClassInfo classInfo) {
     return classInfo.name.contains('Service') ||
-           classInfo.name.contains('Repository') ||
-           classInfo.name.contains('Provider') ||
-           classInfo.name.contains('Controller') ||
-           classInfo.methods.any((m) => 
-             m.name.contains('fetch') || 
-             m.name.contains('get') ||
-             m.name.contains('load') ||
-             m.name.contains('save') ||
-             m.name.contains('update') ||
-             m.name.contains('delete')
-           );
+        classInfo.name.contains('Repository') ||
+        classInfo.name.contains('Provider') ||
+        classInfo.name.contains('Controller') ||
+        classInfo.methods.any((m) =>
+            m.name.contains('fetch') ||
+            m.name.contains('get') ||
+            m.name.contains('load') ||
+            m.name.contains('save') ||
+            m.name.contains('update') ||
+            m.name.contains('delete'));
   }
-  
+
   /// Check if a class is likely a data model
   bool _isModel(ClassInfo classInfo) {
     return classInfo.name.contains('Model') ||
-           classInfo.name.contains('Entity') ||
-           classInfo.name.contains('Data') ||
-           classInfo.name.contains('DTO') ||
-           (classInfo.fields.length > 2 && classInfo.methods.isEmpty);
+        classInfo.name.contains('Entity') ||
+        classInfo.name.contains('Data') ||
+        classInfo.name.contains('DTO') ||
+        (classInfo.fields.length > 2 && classInfo.methods.isEmpty);
   }
 }
 
@@ -215,19 +242,19 @@ class _CodeVisitor extends RecursiveAstVisitor<void> {
   final List<ClassInfo> classes = [];
   final List<String> imports = [];
   final List<String> exports = [];
-  
+
   @override
   void visitImportDirective(ImportDirective node) {
     imports.add(node.uri.stringValue ?? '');
     super.visitImportDirective(node);
   }
-  
+
   @override
   void visitExportDirective(ExportDirective node) {
     exports.add(node.uri.stringValue ?? '');
     super.visitExportDirective(node);
   }
-  
+
   @override
   void visitClassDeclaration(ClassDeclaration node) {
     final classInfo = ClassInfo(
@@ -235,15 +262,17 @@ class _CodeVisitor extends RecursiveAstVisitor<void> {
       isAbstract: node.abstractKeyword != null,
       superclass: node.extendsClause?.superclass.element?.name,
       interfaces: node.implementsClause?.interfaces
-          .map((type) => type.element?.name ?? "")
-          .toList() ?? [],
+              .map((type) => type.element?.name ?? "")
+              .toList() ??
+          [],
       mixins: node.withClause?.mixinTypes
-          .map((type) => type.element?.name ?? "")
-          .toList() ?? [],
+              .map((type) => type.element?.name ?? "")
+              .toList() ??
+          [],
       fields: [],
       methods: [],
     );
-    
+
     for (final member in node.members) {
       if (member is FieldDeclaration) {
         for (final variable in member.fields.variables) {
@@ -277,7 +306,7 @@ class _CodeVisitor extends RecursiveAstVisitor<void> {
         ));
       }
     }
-    
+
     classes.add(classInfo);
     super.visitClassDeclaration(node);
   }
@@ -290,7 +319,7 @@ class ProjectStructure {
   final List<String> widgets;
   final List<String> services;
   final List<String> models;
-  
+
   ProjectStructure({
     required this.metadata,
     required this.files,
@@ -307,7 +336,7 @@ class ProjectMetadata {
   final String version;
   final Map<String, String> dependencies;
   final Map<String, String> devDependencies;
-  
+
   ProjectMetadata({
     required this.name,
     required this.description,
@@ -315,7 +344,7 @@ class ProjectMetadata {
     required this.dependencies,
     required this.devDependencies,
   });
-  
+
   Map<String, dynamic> toJson() {
     return {
       'name': name,
@@ -334,7 +363,7 @@ class FileAnalysis {
   final List<ClassInfo> classes;
   final List<String> imports;
   final List<String> exports;
-  
+
   FileAnalysis({
     required this.path,
     required this.relativePath,
@@ -342,7 +371,7 @@ class FileAnalysis {
     required this.imports,
     required this.exports,
   });
-  
+
   Map<String, dynamic> toJson() {
     return {
       'path': path,
@@ -363,7 +392,7 @@ class ClassInfo {
   final List<String> mixins;
   final List<FieldInfo> fields;
   final List<MethodInfo> methods;
-  
+
   ClassInfo({
     required this.name,
     required this.isAbstract,
@@ -373,7 +402,7 @@ class ClassInfo {
     required this.fields,
     required this.methods,
   });
-  
+
   Map<String, dynamic> toJson() {
     return {
       'name': name,
@@ -395,7 +424,7 @@ class FieldInfo {
   final bool isFinal;
   final bool isConst;
   final bool isPrivate;
-  
+
   FieldInfo({
     required this.name,
     required this.type,
@@ -404,7 +433,7 @@ class FieldInfo {
     required this.isConst,
     required this.isPrivate,
   });
-  
+
   Map<String, dynamic> toJson() {
     return {
       'name': name,
@@ -426,7 +455,7 @@ class MethodInfo {
   final bool isSetter;
   final bool isPrivate;
   final bool isConstructor;
-  
+
   MethodInfo({
     required this.name,
     required this.returnType,
@@ -436,7 +465,7 @@ class MethodInfo {
     required this.isPrivate,
     this.isConstructor = false,
   });
-  
+
   Map<String, dynamic> toJson() {
     return {
       'name': name,

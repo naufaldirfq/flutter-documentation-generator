@@ -7,8 +7,16 @@ import 'package:me_doc/src/git_service.dart';
 /// Service for interacting with AI to generate documentation
 class AIService {
   final DeepSeekProvider _provider;
+  final int _maxFilesPerBatch;
+  final int _delayBetweenBatches;
 
-  AIService({required DeepSeekProvider provider}) : _provider = provider;
+  AIService({
+    required DeepSeekProvider provider,
+    int maxFilesPerBatch = 10,
+    int delayBetweenBatches = 2000,
+  })  : _provider = provider,
+        _maxFilesPerBatch = maxFilesPerBatch,
+        _delayBetweenBatches = delayBetweenBatches;
 
   /// Creates an AI service with the DeepSeek provider via Ollama
   static Future<AIService> create({
@@ -16,6 +24,8 @@ class AIService {
     double temperature = 0.1,
     int contextLength = 4096,
     bool verbose = true,
+    int maxFilesPerBatch = 10,
+    int delayBetweenBatches = 2000,
   }) async {
     final provider = DeepSeekProvider(
       modelName: modelName,
@@ -30,7 +40,11 @@ class AIService {
           'Failed to initialize Ollama with model $modelName. Make sure Ollama is running and the model is installed.');
     }
 
-    return AIService(provider: provider);
+    return AIService(
+      provider: provider,
+      maxFilesPerBatch: maxFilesPerBatch,
+      delayBetweenBatches: delayBetweenBatches,
+    );
   }
 
   /// Disposes of the AI service resources
@@ -38,33 +52,74 @@ class AIService {
     await _provider.dispose();
   }
 
+  /// Generate overview documentation for the entire project (exposed publicly)
+  Future<String> generateProjectOverview(ProjectStructure structure) async {
+    return await _generateProjectOverview(structure);
+  }
+
   /// Generates documentation for code files
   Future<Map<String, String>> generateCodeDocumentation(
-      ProjectStructure structure) async {
+      ProjectStructure structure,
+      {Function(int, int, String)? progressCallback}) async {
     final result = <String, String>{};
 
     // Generate project overview
     print('Generating project overview...');
     result['overview'] = await _generateProjectOverview(structure);
 
-    // Generate documentation for each file
-    int fileCount = 0;
-    for (final fileEntry in structure.files.entries) {
-      final filePath = fileEntry.key;
-      final fileAnalysis = fileEntry.value;
+    // Filter files with classes and create batches
+    final filesToProcess = structure.files.entries
+        .where((entry) => entry.value.classes.isNotEmpty)
+        .toList();
 
-      if (fileAnalysis.classes.isEmpty) continue; // Skip files without classes
+    final totalFiles = filesToProcess.length;
+    print(
+        'Processing $totalFiles files with classes in batches of $_maxFilesPerBatch');
 
-      fileCount++;
+    // Process files in batches
+    for (int i = 0; i < filesToProcess.length; i += _maxFilesPerBatch) {
+      final batchEnd = (i + _maxFilesPerBatch < filesToProcess.length)
+          ? i + _maxFilesPerBatch
+          : filesToProcess.length;
+
+      final batch = filesToProcess.sublist(i, batchEnd);
+
       print(
-          'Generating documentation for file $fileCount/${structure.files.length}: ${fileAnalysis.relativePath}');
+          'Processing batch ${(i ~/ _maxFilesPerBatch) + 1}/${(totalFiles / _maxFilesPerBatch).ceil()}: ${batch.length} files');
 
-      final fileContent = await _readFileContent(filePath);
-      result[fileAnalysis.relativePath] = await _generateFileDocumentation(
-        fileAnalysis,
-        fileContent,
-        structure.metadata.name,
-      );
+      // Process each file in the batch
+      for (int j = 0; j < batch.length; j++) {
+        final fileEntry = batch[j];
+        final filePath = fileEntry.key;
+        final fileAnalysis = fileEntry.value;
+
+        final fileIndex = i + j + 1;
+        print(
+            'Generating documentation for file $fileIndex/$totalFiles: ${fileAnalysis.relativePath}');
+
+        if (progressCallback != null) {
+          progressCallback(fileIndex, totalFiles, fileAnalysis.relativePath);
+        }
+
+        try {
+          final fileContent = await _readFileContent(filePath);
+          result[fileAnalysis.relativePath] = await _generateFileDocumentation(
+            fileAnalysis,
+            fileContent,
+            structure.metadata.name,
+          );
+        } catch (e) {
+          print('Error processing ${fileAnalysis.relativePath}: $e');
+          result[fileAnalysis.relativePath] =
+              'Error generating documentation: $e';
+        }
+      }
+
+      // Wait between batches to let Ollama recover resources
+      if (batchEnd < filesToProcess.length) {
+        print('Waiting $_delayBetweenBatches ms before next batch...');
+        await Future.delayed(Duration(milliseconds: _delayBetweenBatches));
+      }
     }
 
     return result;

@@ -1,21 +1,31 @@
 # MeDoc Configuration File
 
 # Project paths
-projectPath: "/Users/mekari/Documents/mekari/brick-house"
+projectPath: "/Users/mekari/Documents/mobile-talenta"
 outputPath: "./docs"
 
 # Ollama AI Model Settings
-modelName: "deepseek-coder"  # Can also be specific like deepseek-coder:7b-instruct
-temperature: 0.1
+modelName: "deepseek-coder"  # Use smaller model for large projects
+temperature: 0.9
 contextLength: 4096
 verbose: true
 
+# Performance tuning
+maxFilesPerBatch: 2        # Process 2 files at a time
+delayBetweenBatches: 5000  # Wait 5 seconds between batches
+maxFilesToProcess: 10      # Limit to first 10 files (0 for all files)
+
+# Generation options
+overviewOnly: true         # Generate only project-level docs, not individual file docs
+
 # Documentation settings
-include:
-  - lib/**/*.dart
-exclude:
-  - lib/generated/**
-  - lib/test/**
+excludePaths:
+  - "**/*.g.dart"
+  - "**/*.freezed.dart"
+  - "lib/generated/**"
+  - "lib/gen/**"
+  - "**/test/**"
+  - "**/*.lock"
 
 # Output format
 format: "markdown"

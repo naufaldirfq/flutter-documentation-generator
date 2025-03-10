@@ -13,8 +13,21 @@ void main(List<String> arguments) async {
         abbr: 'm', help: 'Ollama model name', defaultsTo: 'deepseek-coder')
     ..addOption('temperature',
         abbr: 't', help: 'AI temperature (0.0-1.0)', defaultsTo: '0.1')
+    ..addOption('batch-size',
+        help: 'Max files to process per batch', defaultsTo: '10')
+    ..addOption('batch-delay',
+        help: 'Milliseconds delay between batches', defaultsTo: '2000')
+    ..addOption('max-files',
+        help: 'Maximum number of files to process (0 for all)', defaultsTo: '0')
+    ..addMultiOption('exclude',
+        abbr: 'e',
+        help: 'File patterns to exclude (can be used multiple times)',
+        defaultsTo: [])
     ..addFlag('verbose',
         abbr: 'v', help: 'Show detailed output', defaultsTo: true)
+    ..addFlag('overview-only',
+        help: 'Generate only project overview without individual file docs',
+        defaultsTo: false)
     ..addFlag('help',
         abbr: 'h', negatable: false, help: 'Show usage information');
 
@@ -46,10 +59,15 @@ void main(List<String> arguments) async {
         'temperature': double.parse(results['temperature']),
         'contextLength': 4096,
         'verbose': results['verbose'],
+        'maxFilesPerBatch': int.parse(results['batch-size']),
+        'delayBetweenBatches': int.parse(results['batch-delay']),
+        'maxFilesToProcess': int.parse(results['max-files']),
+        'excludePaths': results['exclude'],
+        'overviewOnly': results['overview-only'],
       };
     }
 
-    // Create generator
+    // Create generator with proper handling of excludePaths
     final generator = DocumentGenerator(
       projectPath: config['projectPath'],
       outputPath: config['outputPath'],
@@ -57,6 +75,11 @@ void main(List<String> arguments) async {
       temperature: config['temperature'] ?? 0.1,
       contextLength: config['contextLength'] ?? 4096,
       verbose: config['verbose'] ?? true,
+      maxFilesPerBatch: config['maxFilesPerBatch'] ?? 10,
+      delayBetweenBatches: config['delayBetweenBatches'] ?? 2000,
+      maxFilesToProcess: config['maxFilesToProcess'] ?? 0,
+      excludePaths: _getExcludePathsList(config['excludePaths']),
+      overviewOnly: config['overviewOnly'] ?? false,
     );
 
     // Run generation
@@ -68,6 +91,21 @@ void main(List<String> arguments) async {
   }
 }
 
+// Helper function to ensure excludePaths is always a List<String>
+List<String> _getExcludePathsList(dynamic excludePaths) {
+  if (excludePaths == null) {
+    return [];
+  } else if (excludePaths is List) {
+    return excludePaths.map((e) => e.toString()).toList();
+  } else if (excludePaths is Map && excludePaths.containsKey('list')) {
+    final list = excludePaths['list'];
+    if (list is List) {
+      return list.map((e) => e.toString()).toList();
+    }
+  }
+  return [];
+}
+
 void printUsage(ArgParser parser) {
   print('MeDoc - Mekari Document Generator with Ollama');
   print('Usage: me_doc --project <flutter_project_path> [options]');
@@ -75,7 +113,13 @@ void printUsage(ArgParser parser) {
   print(parser.usage);
   print('\nExample:');
   print(
-      '  me_doc --project ~/my_flutter_app --model deepseek-coder:7b-instruct');
+      '  me_doc --project ~/my_flutter_app --model deepseek-coder:7b-instruct --batch-size 5');
+  print('\nPerformance Tips:');
+  print('  - For large projects use --batch-size 5 --batch-delay 3000');
+  print('  - Use --max-files 100 to process only a subset of files');
+  print('  - Use --overview-only to generate only project-level documentation');
+  print(
+      '  - Use --exclude "lib/generated/**" --exclude "lib/models/**" to skip certain paths');
   print('\nNotes:');
   print('  - Ollama must be installed and running on your system');
   print('  - Make sure to pull the model first: ollama pull deepseek-coder');
@@ -95,16 +139,30 @@ Future<Map<String, dynamic>> loadConfig(String configPath) async {
 }
 
 Map<String, dynamic> convertYamlToMap(dynamic yamlMap) {
-  if (yamlMap is Map) {
-    return yamlMap.map((key, value) => MapEntry(
-          key.toString(),
-          value is Map || value is List ? convertYamlToMap(value) : value,
-        ));
-  } else if (yamlMap is List) {
+  if (yamlMap is YamlMap) {
+    final map = <String, dynamic>{};
+    for (var entry in yamlMap.entries) {
+      final key = entry.key.toString();
+      final value = entry.value;
+      if (value is YamlMap) {
+        map[key] = convertYamlToMap(value);
+      } else if (value is YamlList) {
+        map[key] = value
+            .map((item) => item is YamlMap || item is YamlList
+                ? convertYamlToMap(item)
+                : item)
+            .toList();
+      } else {
+        map[key] = value;
+      }
+    }
+    return map;
+  } else if (yamlMap is YamlList) {
     return {
       'list': yamlMap
-          .map((item) =>
-              item is Map || item is List ? convertYamlToMap(item) : item)
+          .map((item) => item is YamlMap || item is YamlList
+              ? convertYamlToMap(item)
+              : item)
           .toList()
     };
   }

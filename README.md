@@ -9,6 +9,7 @@ MeDoc is an AI-powered documentation generator for Flutter projects that automat
 - **Code Analysis**: Parses and analyzes Flutter/Dart code structure and relationships
 - **Git Integration**: Extracts project history to generate detailed changelogs
 - **Markdown Output**: Clean, structured documentation in Markdown format
+- **Performance Optimizations**: Batch processing and configurable limits for large projects
 
 ## Prerequisites
 
@@ -65,6 +66,10 @@ Options:
 - `--output`, `-o`: Output directory for documentation (default: project_path/docs)
 - `--model`, `-m`: Ollama model to use (default: deepseek-coder)
 - `--temperature`, `-t`: AI creativity level 0.0-1.0 (default: 0.1)
+- `--batch-size`: Max files to process per batch (default: 10)
+- `--batch-delay`: Milliseconds delay between batches (default: 2000)
+- `--max-files`: Maximum number of files to process (default: 0 = all files)
+- `--exclude`, `-e`: File patterns to exclude (can be used multiple times)
 - `--config`, `-c`: Path to configuration file
 - `--verbose`, `-v`: Show detailed output (default: true)
 - `--help`, `-h`: Show usage information
@@ -79,22 +84,76 @@ projectPath: "./your_flutter_project"
 outputPath: "./docs"
 
 # Ollama AI Settings
-modelName: "deepseek-coder"
+modelName: "deepseek-coder:7b-instruct"
 temperature: 0.1
 contextLength: 4096
 verbose: true
 
+# Performance tuning
+maxFilesPerBatch: 5        # Process 5 files at a time
+delayBetweenBatches: 3000  # Wait 3 seconds between batches
+maxFilesToProcess: 100     # Limit to first 100 files (0 for all files)
+
 # Documentation settings
-include:
-  - lib/**/*.dart
-exclude:
-  - lib/generated/**
+excludePaths:
+  - "**/*.g.dart"
+  - "lib/generated/**"
+  - "**/test/**"
 ```
 
 Then run:
 
 ```bash
 dart run bin/me_doc.dart --config me_doc_config.yaml
+```
+
+## Performance Optimization for Large Projects
+
+When dealing with large codebases (hundreds or thousands of files), MeDoc provides several optimization options:
+
+### Overview-Only Mode
+
+Generate just the project-level documentation without individual file docs:
+
+```bash
+dart run bin/me_doc.dart --project ./my_app --overview-only
+```
+
+This mode significantly reduces generation time while still providing:
+- Project overview documentation
+- Project summary (README.md)
+- Changelog based on Git history
+
+### Batch Processing
+
+Process files in smaller batches with delays to prevent resource exhaustion:
+
+```bash
+dart run bin/me_doc.dart --project ./my_app --batch-size 5 --batch-delay 3000
+```
+
+### Limiting File Count
+
+Process only a subset of files to focus on the most important parts:
+
+```bash
+dart run bin/me_doc.dart --project ./my_app --max-files 100
+```
+
+### Excluding Unnecessary Files
+
+Skip generated files or less important modules:
+
+```bash
+dart run bin/me_doc.dart --project ./my_app --exclude "lib/generated/**" --exclude "**/models/**"
+```
+
+### Choosing Smaller Models
+
+For faster processing with less memory use:
+
+```bash
+dart run bin/me_doc.dart --project ./my_app --model deepseek-coder:7b-instruct
 ```
 
 ## Output Structure
@@ -104,6 +163,8 @@ MeDoc generates the following documentation:
 - `README.md`: Project overview and summary
 - `CHANGELOG.md`: Detailed changelog based on Git history
 - `/code/`: Directory containing documentation for each source file
+- `generation_info.json`: Stats about the documentation generation process
+- `progress.log`: Detailed progress tracking during generation
 
 ## Available Models
 
@@ -152,17 +213,22 @@ dart run bin/me_doc.dart --project ./my_app --temperature 0.7
 
 ### Common Issues
 
-1. **"Failed to initialize Ollama"**
-   - Ensure Ollama is running with `ollama serve`
-   - Verify the model is installed with `ollama list`
+1. **Stuck on "Sending prompt to Ollama..."**
+   - Reduce batch size (`--batch-size 3`)
+   - Increase delay between batches (`--batch-delay 5000`)
+   - Use the smaller 7B model
+   - Close other memory-intensive applications
 
-2. **Slow Generation**
-   - Try a smaller model like `deepseek-coder:7b-instruct`
-   - Close other resource-intensive applications
-
-3. **Out of Memory Errors**
+2. **Out of Memory Errors**
    - Use a smaller model variant
-   - Increase swap space on your system
+   - Reduce the number of files processed
+   - Close other applications
+   - Add swap space to your system
+
+3. **Slow Generation**
+   - Use batch processing with reasonable delays
+   - Exclude less important files
+   - Use the smaller 7B model
 
 ## Contributing
 
