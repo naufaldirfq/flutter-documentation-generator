@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  me_doc:
+    container_name: me_doc
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./models:/root/.ollama/models
+    command: sh -c "ollama serve"
