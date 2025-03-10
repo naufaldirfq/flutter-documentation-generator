@@ -7,7 +7,7 @@ MeDoc is an AI-powered documentation generator for Flutter projects that automat
 - **Automatic Documentation**: Generate detailed docs for Flutter projects with minimal effort
 - **Local AI Processing**: Uses Ollama with DeepSeek Coder for privacy and offline use
 - **Code Analysis**: Parses and analyzes Flutter/Dart code structure and relationships
-- **Git Integration**: Extracts project history to generate detailed changelogs
+- **Git Integration**: Extracts project history to generate detailed changelogs with tag-based versioning
 - **Markdown Output**: Clean, structured documentation in Markdown format
 - **Performance Optimizations**: Batch processing and configurable limits for large projects
 
@@ -69,7 +69,9 @@ Options:
 - `--batch-size`: Max files to process per batch (default: 10)
 - `--batch-delay`: Milliseconds delay between batches (default: 2000)
 - `--max-files`: Maximum number of files to process (default: 0 = all files)
+- `--max-tags`: Maximum number of tags to analyze for changelog (default: 10)
 - `--exclude`, `-e`: File patterns to exclude (can be used multiple times)
+- `--overview-only`: Generate only project-level docs without individual file docs
 - `--config`, `-c`: Path to configuration file
 - `--verbose`, `-v`: Show detailed output (default: true)
 - `--help`, `-h`: Show usage information
@@ -93,6 +95,10 @@ verbose: true
 maxFilesPerBatch: 5        # Process 5 files at a time
 delayBetweenBatches: 3000  # Wait 3 seconds between batches
 maxFilesToProcess: 100     # Limit to first 100 files (0 for all files)
+maxTags: 5                 # Limit to 5 most recent tags for changelog
+
+# Generation options
+overviewOnly: true         # Generate only project-level docs
 
 # Documentation settings
 excludePaths:
@@ -148,6 +154,16 @@ Skip generated files or less important modules:
 dart run bin/me_doc.dart --project ./my_app --exclude "lib/generated/**" --exclude "**/models/**"
 ```
 
+### Limiting Tag Processing
+
+For repositories with many tags, limit changelog generation to recent releases:
+
+```bash
+dart run bin/me_doc.dart --project ./my_app --max-tags 5
+```
+
+This generates a changelog focusing only on the 5 most recent version tags, improving performance and readability.
+
 ### Choosing Smaller Models
 
 For faster processing with less memory use:
@@ -161,8 +177,9 @@ dart run bin/me_doc.dart --project ./my_app --model deepseek-coder:7b-instruct
 MeDoc generates the following documentation:
 
 - `README.md`: Project overview and summary
-- `CHANGELOG.md`: Detailed changelog based on Git history
+- `CHANGELOG.md`: Detailed changelog based on Git history, organized by version tags
 - `/code/`: Directory containing documentation for each source file
+- `/code/overview.md`: High-level overview of the project architecture and structure
 - `generation_info.json`: Stats about the documentation generation process
 - `progress.log`: Detailed progress tracking during generation
 
