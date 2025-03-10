@@ -19,6 +19,9 @@ void main(List<String> arguments) async {
         help: 'Milliseconds delay between batches', defaultsTo: '2000')
     ..addOption('max-files',
         help: 'Maximum number of files to process (0 for all)', defaultsTo: '0')
+    ..addOption('max-tags',
+        help: 'Maximum number of tags to analyze for changelog (0 for all)',
+        defaultsTo: '10')
     ..addMultiOption('exclude',
         abbr: 'e',
         help: 'File patterns to exclude (can be used multiple times)',
@@ -64,6 +67,7 @@ void main(List<String> arguments) async {
         'maxFilesToProcess': int.parse(results['max-files']),
         'excludePaths': results['exclude'],
         'overviewOnly': results['overview-only'],
+        'maxTags': int.parse(results['max-tags']),
       };
     }
 
@@ -80,6 +84,7 @@ void main(List<String> arguments) async {
       maxFilesToProcess: config['maxFilesToProcess'] ?? 0,
       excludePaths: _getExcludePathsList(config['excludePaths']),
       overviewOnly: config['overviewOnly'] ?? false,
+      maxTags: config['maxTags'] ?? 10,
     );
 
     // Run generation
@@ -117,6 +122,8 @@ void printUsage(ArgParser parser) {
   print('\nPerformance Tips:');
   print('  - For large projects use --batch-size 5 --batch-delay 3000');
   print('  - Use --max-files 100 to process only a subset of files');
+  print(
+      '  - Use --max-tags 5 to limit changelog generation to recent releases');
   print('  - Use --overview-only to generate only project-level documentation');
   print(
       '  - Use --exclude "lib/generated/**" --exclude "lib/models/**" to skip certain paths');

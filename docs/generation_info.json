@@ -1,0 +1,21 @@
+{
+  "startTime": "2025-03-10 14:23:32",
+  "projectPath": "/Users/mekari/Documents/mobile-talenta",
+  "modelName": "deepseek-coder",
+  "temperature": 0.9,
+  "maxFilesPerBatch": 5,
+  "maxFilesToProcess": "all",
+  "excludePaths": [
+    "**/*.g.dart",
+    "**/*.freezed.dart",
+    "lib/generated/**",
+    "lib/gen/**",
+    "**/test/**",
+    "**/*.lock"
+  ],
+  "overviewOnly": true,
+  "endTime": "2025-03-10 14:27:14",
+  "duration": "0h 3m 41s",
+  "filesProcessed": 1075,
+  "filesDocumented": 0
+}

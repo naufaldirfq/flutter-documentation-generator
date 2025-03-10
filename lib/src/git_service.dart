@@ -1,291 +1,392 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as path;
 
-/// Service for extracting Git history information
+/// Service for interacting with Git repositories
 class GitService {
-  final String projectPath;
-  
-  GitService(this.projectPath);
-  
-  /// Retrieves the project's Git history
+  final String repositoryPath;
+
+  GitService(this.repositoryPath);
+
+  /// Get the project's Git history
   Future<GitHistory> getProjectHistory() async {
     final history = GitHistory();
-    
+
     try {
-      // Check if the directory is a Git repository
-      final gitDir = Directory(path.join(projectPath, '.git'));
-      if (!gitDir.existsSync()) {
-        print('Warning: Not a Git repository - $projectPath');
+      // Check if this is a Git repository
+      final gitDirExists =
+          await Directory(path.join(repositoryPath, '.git')).exists();
+      if (!gitDirExists) {
+        print('Warning: No Git repository found at $repositoryPath');
         return history;
       }
-      
-      // Get commits
-      history.commits = await _getCommits();
-      
-      // Extract unique authors from commits
-      final authors = <String>{};
-      for (final commit in history.commits) {
-        authors.add(commit.author);
+
+      // Get all authors
+      final authors = await _getAuthors();
+      history.authors = authors;
+
+      // Get all commits
+      final commits = await _getCommits();
+      history.commits = commits;
+
+      // Get first and last commit dates
+      if (commits.isNotEmpty) {
+        history.firstCommitDate = commits.last.date;
+        history.lastCommitDate = commits.first.date;
       }
-      history.authors = authors.toList();
-      
-      // Set first and last commit dates
-      if (history.commits.isNotEmpty) {
-        history.firstCommitDate = history.commits.last.date;
-        history.lastCommitDate = history.commits.first.date;
-      }
-      
-      // Get tags and branches
-      history.tags = await _getTags();
-      history.branches = await _getBranches();
-      
-      return history;
+
+      // Get branches
+      final branches = await _getBranches();
+      history.branches = branches;
+
+      // Get tags and their commit information
+      final tagsInfo = await _getTags();
+      history.tags = tagsInfo['tags'] as List<String>;
+      history.tagToCommit = tagsInfo['tagToCommit'] as Map<String, String>;
+      history.tagDate = tagsInfo['tagDate'] as Map<String, String>;
     } catch (e) {
-      print('Error extracting Git history: $e');
-      return history;
+      print('Error getting Git history: $e');
     }
+
+    return history;
   }
-  
-  /// Gets list of commits
-  Future<List<GitCommit>> _getCommits() async {
-    final result = <GitCommit>[];
-    
-    // Get commit log with format: hash|author|date|subject
-    final output = await _runGitCommand([
-      'log', 
-      '--pretty=format:%H|%an|%ad|%s', 
-      '--date=iso',
-    ]);
-    
-    if (output.isEmpty) return result;
-    
-    // Parse commit log
-    final lines = output.split('\n');
-    for (final line in lines) {
-      final parts = line.split('|');
-      if (parts.length < 4) continue;
-      
-      final hash = parts[0];
-      final author = parts[1];
-      final date = parts[2];
-      final message = parts[3];
-      
-      // Get files changed in this commit
-      final changes = await _getCommitChanges(hash);
-      
-      result.add(GitCommit(
-        hash: hash,
-        author: author,
-        date: date,
-        message: message,
-        changes: changes,
-      ));
-    }
-    
-    return result;
-  }
-  
-  /// Gets list of changes in a commit
-  Future<List<FileChange>> _getCommitChanges(String hash) async {
-    final result = <FileChange>[];
-    
-    // Get diff stats for the commit with format: status|path
-    final output = await _runGitCommand([
-      'show',
-      '--name-status',
-      '--format=',
-      hash,
-    ]);
-    
-    if (output.isEmpty) return result;
-    
-    // Parse diff stats
-    final lines = output.trim().split('\n');
-    for (final line in lines) {
-      if (line.isEmpty) continue;
-      
-      final parts = line.split('\t');
-      if (parts.length < 2) continue;
-      
-      final status = parts[0];
-      final filePath = parts[1];
-      
-      ChangeType changeType;
-      switch (status[0]) {
-        case 'A': changeType = ChangeType.added; break;
-        case 'M': changeType = ChangeType.modified; break;
-        case 'D': changeType = ChangeType.deleted; break;
-        case 'R': changeType = ChangeType.renamed; break;
-        default: changeType = ChangeType.modified; break;
+
+  /// Get all authors who contributed to the repository
+  Future<List<String>> _getAuthors() async {
+    final result =
+        await _runGitCommand(['log', '--format=%an <%ae>', '--no-merges']);
+
+    if (result.isEmpty) return [];
+
+    final uniqueAuthors = <String>{};
+    for (final line in result.split('\n')) {
+      if (line.trim().isNotEmpty) {
+        uniqueAuthors.add(line.trim());
       }
-      
-      result.add(FileChange(
-        path: filePath,
-        type: changeType,
-      ));
     }
-    
-    return result;
+
+    return uniqueAuthors.toList();
   }
-  
-  /// Gets list of Git tags
-  Future<List<GitTag>> _getTags() async {
-    final result = <GitTag>[];
-    
-    // Get tags with format: name|hash|date
-    final output = await _runGitCommand([
-      'tag',
-      '--sort=creatordate',
-      '--format=%(refname:short)|%(objectname)|%(creatordate:iso)',
+
+  /// Get all commits in the repository (newest first)
+  Future<List<GitCommit>> _getCommits() async {
+    final result = await _runGitCommand([
+      'log',
+      '--pretty=format:%H|%an|%ad|%s|%b',
+      '--date=iso',
+      '--no-merges',
     ]);
-    
-    if (output.isEmpty) return result;
-    
-    // Parse tags
-    final lines = output.trim().split('\n');
+
+    if (result.isEmpty) return [];
+
+    final commits = <GitCommit>[];
+    final lines = result.split('\n');
+
     for (final line in lines) {
-      if (line.isEmpty) continue;
-      
+      if (line.trim().isEmpty) continue;
+
       final parts = line.split('|');
-      if (parts.length < 3) continue;
-      
-      result.add(GitTag(
-        name: parts[0],
-        hash: parts[1],
-        date: parts[2],
-      ));
+      if (parts.length >= 4) {
+        final hash = parts[0];
+        final author = parts[1];
+        final date = parts[2];
+        final shortMessage = parts[3];
+        // Join the rest as the full commit message
+        final message =
+            parts.length > 4 ? parts.sublist(4).join('|') : shortMessage;
+
+        commits.add(GitCommit(
+          hash: hash,
+          author: author,
+          date: date,
+          shortMessage: shortMessage,
+          message: message,
+        ));
+      }
     }
-    
-    return result;
+
+    return commits;
   }
-  
-  /// Gets list of Git branches
+
+  /// Get all branches in the repository
   Future<List<String>> _getBranches() async {
-    final output = await _runGitCommand(['branch', '--list']);
-    
-    if (output.isEmpty) return [];
-    
-    // Parse branches (removing the * marker from current branch)
-    return output.split('\n')
-        .map((branch) => branch.trim().replaceAll('* ', ''))
-        .where((branch) => branch.isNotEmpty)
-        .toList();
+    final result = await _runGitCommand(['branch', '--list', '--no-color']);
+
+    if (result.isEmpty) return [];
+
+    final branches = <String>[];
+    for (final line in result.split('\n')) {
+      if (line.trim().isNotEmpty) {
+        // Remove the leading '* ' or '  ' from branch names
+        branches.add(line.trim().replaceFirst(RegExp(r'^\*?\s*'), ''));
+      }
+    }
+
+    return branches;
   }
-  
-  /// Runs a Git command and returns the output
-  Future<String> _runGitCommand(List<String> args) async {
+
+  /// Get all tags in the repository with their commit hashes and dates
+  Future<Map<String, dynamic>> _getTags() async {
+    final tags = <String>[];
+    final tagToCommit = <String, String>{};
+    final tagDate = <String, String>{};
+
+    // Get list of tags
+    final tagsResult = await _runGitCommand(['tag', '-l']);
+    if (tagsResult.isNotEmpty) {
+      tags.addAll(tagsResult.split('\n').where((t) => t.trim().isNotEmpty));
+    }
+
+    // Get tag -> commit mapping
+    for (final tag in tags) {
+      try {
+        // Get commit hash for the tag
+        final commitHash = await _runGitCommand(['rev-list', '-n', '1', tag]);
+        if (commitHash.trim().isNotEmpty) {
+          tagToCommit[tag] = commitHash.trim();
+
+          // Get commit date for the tag
+          final dateResult = await _runGitCommand(
+              ['show', '-s', '--format=%ad', '--date=iso', commitHash.trim()]);
+          if (dateResult.trim().isNotEmpty) {
+            tagDate[tag] = dateResult.trim();
+          }
+        }
+      } catch (e) {
+        print('Error getting info for tag $tag: $e');
+      }
+    }
+
+    return {
+      'tags': tags,
+      'tagToCommit': tagToCommit,
+      'tagDate': tagDate,
+    };
+  }
+
+  /// Run a Git command and return the output
+  Future<String> _runGitCommand(List<String> arguments) async {
     try {
       final result = await Process.run(
         'git',
-        args,
-        workingDirectory: projectPath,
+        arguments,
+        workingDirectory: repositoryPath,
       );
-      
-      if (result.exitCode != 0) {
-        print('Warning: Git command failed: ${result.stderr}');
+
+      if (result.exitCode == 0) {
+        return result.stdout.toString().trim();
+      } else {
+        print('Git command error: ${result.stderr}');
         return '';
       }
-      
-      return result.stdout.toString();
     } catch (e) {
       print('Error running Git command: $e');
       return '';
     }
   }
+
+  /// Get commits associated with a specific tag
+  Future<List<GitCommit>> getCommitsForTag(String tag,
+      {String? previousTag}) async {
+    try {
+      // Get the commit hash for the tag
+      final tagCommitHash = await _runGitCommand(['rev-list', '-n', '1', tag]);
+      if (tagCommitHash.isEmpty) return [];
+
+      // Determine the range to use
+      String range;
+      if (previousTag != null) {
+        range = '$previousTag..$tag';
+      } else {
+        // If no previous tag, get all commits up to this tag
+        range = tag;
+      }
+
+      // Get commits in the range
+      final result = await _runGitCommand([
+        'log',
+        range,
+        '--pretty=format:%H|%an|%ad|%s|%b',
+        '--date=iso',
+        '--no-merges',
+      ]);
+
+      if (result.isEmpty) return [];
+
+      final commits = <GitCommit>[];
+      final lines = result.split('\n');
+
+      for (final line in lines) {
+        if (line.trim().isEmpty) continue;
+
+        final parts = line.split('|');
+        if (parts.length >= 4) {
+          final hash = parts[0];
+          final author = parts[1];
+          final date = parts[2];
+          final shortMessage = parts[3];
+          final message =
+              parts.length > 4 ? parts.sublist(4).join('|') : shortMessage;
+
+          final cleanedMessage = _cleanCommitMessage(message);
+          final cleanedShortMessage = _cleanCommitMessage(shortMessage);
+
+          commits.add(GitCommit(
+            hash: hash,
+            author: author,
+            date: date,
+            shortMessage: cleanedShortMessage,
+            message: cleanedMessage,
+          ));
+        }
+      }
+
+      return commits;
+    } catch (e) {
+      print('Error getting commits for tag $tag: $e');
+      return [];
+    }
+  }
+
+  /// Clean commit message by removing ticket numbers and standardizing format
+  String _cleanCommitMessage(String message) {
+    // Remove ticket numbers (like PROJECT-123:)
+    message = message.replaceAll(RegExp(r'^\s*\[?[A-Z]+-\d+\]?:?\s*'), '');
+
+    // Remove merge commit prefixes
+    message =
+        message.replaceAll(RegExp(r'^Merge (branch|pull request) .*: '), '');
+
+    // Remove multiple spaces
+    message = message.replaceAll(RegExp(r'\s+'), ' ').trim();
+
+    // Capitalize first letter if needed
+    if (message.isNotEmpty) {
+      final firstChar = message[0];
+      if (firstChar.toLowerCase() == firstChar) {
+        message = firstChar.toUpperCase() + message.substring(1);
+      }
+    }
+
+    return message;
+  }
+
+  /// Get all tags sorted by date (newest first)
+  Future<List<String>> getSortedTags() async {
+    final tagsInfo = await _getTags();
+    final tags = tagsInfo['tags'] as List<String>;
+    final tagDate = tagsInfo['tagDate'] as Map<String, String>;
+
+    // Sort tags by date
+    tags.sort((a, b) {
+      final dateA = tagDate[a] ?? '';
+      final dateB = tagDate[b] ?? '';
+      return dateB.compareTo(dateA); // Newest first
+    });
+
+    return tags;
+  }
+
+  /// Get unreleased commits (commits after the most recent tag)
+  Future<List<GitCommit>> getUnreleasedCommits() async {
+    final sortedTags = await getSortedTags();
+    if (sortedTags.isEmpty) {
+      // If no tags, consider all commits as unreleased
+      return await _getCommits();
+    }
+
+    final latestTag = sortedTags.first;
+
+    // Get commits since the latest tag
+    final result = await _runGitCommand([
+      'log',
+      '$latestTag..HEAD',
+      '--pretty=format:%H|%an|%ad|%s|%b',
+      '--date=iso',
+      '--no-merges',
+    ]);
+
+    if (result.isEmpty) return [];
+
+    final commits = <GitCommit>[];
+    final lines = result.split('\n');
+
+    for (final line in lines) {
+      if (line.trim().isEmpty) continue;
+
+      final parts = line.split('|');
+      if (parts.length >= 4) {
+        final hash = parts[0];
+        final author = parts[1];
+        final date = parts[2];
+        final shortMessage = parts[3];
+        final message =
+            parts.length > 4 ? parts.sublist(4).join('|') : shortMessage;
+
+        final cleanedMessage = _cleanCommitMessage(message);
+        final cleanedShortMessage = _cleanCommitMessage(shortMessage);
+
+        commits.add(GitCommit(
+          hash: hash,
+          author: author,
+          date: date,
+          shortMessage: cleanedShortMessage,
+          message: cleanedMessage,
+        ));
+      }
+    }
+
+    return commits;
+  }
 }
 
-/// Represents the Git history of a project
+/// Class representing a Git project's history
 class GitHistory {
   List<String> authors = [];
+  List<GitCommit> commits = [];
   String firstCommitDate = '';
   String lastCommitDate = '';
-  List<GitCommit> commits = [];
-  List<GitTag> tags = [];
   List<String> branches = [];
-  
+  List<String> tags = [];
+  Map<String, String> tagToCommit = {};
+  Map<String, String> tagDate = {};
+
   Map<String, dynamic> toJson() {
     return {
       'authors': authors,
+      'commits': commits.map((c) => c.toJson()).toList(),
       'firstCommitDate': firstCommitDate,
       'lastCommitDate': lastCommitDate,
-      'commits': commits.map((commit) => commit.toJson()).toList(),
-      'tags': tags.map((tag) => tag.toJson()).toList(),
       'branches': branches,
+      'tags': tags,
+      'tagToCommit': tagToCommit,
+      'tagDate': tagDate,
     };
   }
 }
 
-/// Represents a Git commit
+/// Class representing a Git commit
 class GitCommit {
   final String hash;
   final String author;
   final String date;
+  final String shortMessage;
   final String message;
-  final List<FileChange> changes;
-  
+
   GitCommit({
     required this.hash,
     required this.author,
     required this.date,
+    required this.shortMessage,
     required this.message,
-    required this.changes,
   });
-  
+
   Map<String, dynamic> toJson() {
     return {
       'hash': hash,
       'author': author,
       'date': date,
+      'shortMessage': shortMessage,
       'message': message,
-      'changes': changes.map((change) => change.toJson()).toList(),
-    };
-  }
-}
-
-/// Represents a change to a file in a Git commit
-class FileChange {
-  final String path;
-  final ChangeType type;
-  
-  FileChange({
-    required this.path,
-    required this.type,
-  });
-  
-  Map<String, dynamic> toJson() {
-    return {
-      'path': path,
-      'type': type.toString().split('.').last,
-    };
-  }
-}
-
-/// Type of change to a file
-enum ChangeType {
-  added,
-  modified,
-  deleted,
-  renamed,
-}
-
-/// Represents a Git tag
-class GitTag {
-  final String name;
-  final String hash;
-  final String date;
-  
-  GitTag({
-    required this.name,
-    required this.hash,
-    required this.date,
-  });
-  
-  Map<String, dynamic> toJson() {
-    return {
-      'name': name,
-      'hash': hash,
-      'date': date,
     };
   }
 }

@@ -18,6 +18,7 @@ class DocumentGenerator {
   final List<String> excludePaths;
   final int maxFilesToProcess;
   final bool overviewOnly;
+  final int maxTags; // Add this field
 
   late final CodeAnalyzer _codeAnalyzer;
   late AIService _aiService;
@@ -35,6 +36,7 @@ class DocumentGenerator {
     this.excludePaths = const [],
     this.maxFilesToProcess = 0, // 0 means process all
     this.overviewOnly = false,
+    this.maxTags = 10, // Default to 10 tags
   }) {
     _codeAnalyzer = CodeAnalyzer(projectPath, excludePaths: excludePaths);
     _gitService = GitService(projectPath);
@@ -53,6 +55,7 @@ class DocumentGenerator {
     try {
       // Initialize the AI service with Ollama
       _aiService = await AIService.create(
+        projectPath: projectPath, // Pass projectPath to AIService
         modelName: modelName,
         temperature: temperature,
         contextLength: contextLength,
@@ -65,6 +68,12 @@ class DocumentGenerator {
       final outputDir = Directory(outputPath);
       if (!outputDir.existsSync()) {
         outputDir.createSync(recursive: true);
+      }
+
+      // Create code directory structure in advance
+      final codeDir = Directory(path.join(outputPath, 'code'));
+      if (!codeDir.existsSync()) {
+        codeDir.createSync(recursive: true);
       }
 
       // Write generation info log
@@ -127,8 +136,15 @@ class DocumentGenerator {
       // Step 3: Generate project overview documentation
       print('Generating project overview...');
       final overview = await _aiService.generateProjectOverview(codeStructure);
-      await File(path.join(outputPath, 'code', 'overview.md'))
-          .writeAsString(overview);
+
+      // Ensure code directory exists before writing the overview file
+      final overviewFilePath = path.join(outputPath, 'code', 'overview.md');
+      final overviewDir = Directory(path.dirname(overviewFilePath));
+      if (!overviewDir.existsSync()) {
+        overviewDir.createSync(recursive: true);
+      }
+
+      await File(overviewFilePath).writeAsString(overview);
 
       Map<String, String> codeDocumentation = {'overview': overview};
 
@@ -156,7 +172,8 @@ class DocumentGenerator {
 
       // Step 5: Generate changelog
       print('Generating changelog...');
-      final changelog = await _aiService.generateChangelog(gitHistory);
+      final changelog =
+          await _aiService.generateChangelog(gitHistory, maxTags: maxTags);
       await File(path.join(outputPath, 'CHANGELOG.md'))
           .writeAsString(changelog);
 

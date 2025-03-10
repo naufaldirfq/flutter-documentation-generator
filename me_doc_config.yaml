@@ -7,13 +7,14 @@ outputPath: "./docs"
 # Ollama AI Model Settings
 modelName: "deepseek-coder"  # Use smaller model for large projects
 temperature: 0.9
-contextLength: 4096
+# contextLength: 4096
 verbose: true
 
 # Performance tuning
-maxFilesPerBatch: 2        # Process 2 files at a time
+maxFilesPerBatch: 5        # Process 5 files at a time
 delayBetweenBatches: 5000  # Wait 5 seconds between batches
-maxFilesToProcess: 10      # Limit to first 10 files (0 for all files)
+maxFilesToProcess: 0       # Limit to first N files (0 for all files)
+maxTags: 5                 # Limit to 5 most recent tags for changelog (0 for all tags)
 
 # Generation options
 overviewOnly: true         # Generate only project-level docs, not individual file docs

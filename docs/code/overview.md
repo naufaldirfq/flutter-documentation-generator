@@ -1,0 +1,28 @@
+# Talenta Project Overview & System Design
+Talenta is an advanced Flutter application for managing user data such as patient records, appointments, consultations etc., aiming to provide comprehensive functionality in a clean and intuitive way utilizing various modern architectural patterns like BLoC (Business Logic Components) where we are adding business logic directly into the widget tree.
+
+## Project Purpose & Overview: 
+The Talenta application aims at providing an advanced, user-friendly interface for managing patient records efficiently in a seamless and efficient way while respecting privacy rights by storing sensitive information securely with Flutter Secure Storage plugin alongside encapsulating all data operations within BLoC pattern. All these ensure that the app is designed to be clean & intuitive under each screen level, making it easy to navigate through different pages/screens of our application and provides a high-level understanding for user's interaction at every layer in order not only providing seamless flow but also maintaining privacy rights by storing sensitive data securely.
+
+## Key Statistics: 
+1075 Dart files, mainly related with Widget classes (629), Service Classes(83) and Model Classess (# of User Data Models)(4). This represents an effective structure to manage different types of user-related tasks effectively in the system.
+    
+## Dependencies: 
+* Talenta uses Flutter {sdk} version for its development with SDK - flutter (to compile/run) and cupertino_icons, image_picker & file_picker packages as dependencies to fetch images or pick files from device’s storage respectively. Also it depends on specific versions of other libraries such like heif_converter(for handling different types of graphics), flutter widgets created via HTML core (flutter widget tree)
+    
+# System Architecture and Design Patterns: 
+- BLoC pattern is used to manage application business logic in the form a series, where actions flow into one or more processes. In our case we are adding these features directly within user interactions such as screen transitioning by using Flutter's navigator (navigate) method inside blocs and widgets that allow complex navigation among different pages of data managed apps to reduce code complexity & improve maintainability .
+- All the screens in Talenta app follow a clean, intuitive architecture design pattern. Each page is designed as an independent widget tree providing better separation between user interface elements maintaining encapsulated states (blocs) and presenters while keeping UI logic out from handlers thus achieving decoupling of concerns within our application's flow & codebase which in turn makes the app more maintainable, scalable etc.
+- Model classes provide data models to interact with backend server or local database using APIs provided by service layer (Service Classes). 1075 Dart files total represent a large amount and complexity of coding for managing different types user related tasks effectively within Talenta system . The architecture used in the application follows modular approach where each module has its own set of responsibilities with clear boundaries.
+- Service classes handle all network calls by making API requests to backend server or local database providing functionalities such as saving, updating and deleting data (Model Classess) etc., 83 services are represented across Talenta app which provide various service related functionality ie patient records management in the case of "talenta".
+  
+## Project Organization:   
+The project follows a modular approach with each module/component having its own responsibilities within application flow. We segregate screens into different modules based on their functionalities e,g., LoginModule(handling login functionality), UserProfileManager (Managing user's profile and records related tasks) etc . Each of these separate components have distinct widgets associated with them in the app ie UI layer elements that interact directly & influence other component.
+  
+## Key Components: 
+1- BLoC pattern is implemented on top as managing all complex data flow logic, decoupling from user interface and presenters ensuring our application remains maintainable under each screen level due to its series of actions in the form a series where effects can propagate outwards.  2 - Model Classess (4) serve for interaction with backend server or local database through APIs provided by Service Classes(83). 
+    5- Services class provide various functionalities such as saving, updating and deleting data via API requests to back end servers ie handling different types of user related tasks e.g., patient records management in the case "talenta".  6 - Widgets (210+) are used for each screen or component within our application which is divided into small manageable widgets/screens, facilitating a better organization and easy navigation among multiple screens to make user interactions smoother & maintainably.
+    7- Dependencies: Deps on packages such as flutter_secure_storage (storing sensitive data securely), imagepicker(fetching images from device’s storage) , filePicker, heifConverter etc are used for various tasks e.g., saving user's records or choosing picture files to be uploaded .
+  
+## Interaction and Flow: 
+Each screen in the app has a button which leads it towards another page ie directing actions on different screens/pages within our application flow using navigators inside Blocs, widgets. Also each widget interact with others (responsible) through BLoC or Service layers handling data manipulations and interactions among them resulting an overall seamless experience for the users in Talenta app .
